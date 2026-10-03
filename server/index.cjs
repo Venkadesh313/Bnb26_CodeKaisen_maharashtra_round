@@ -7,8 +7,15 @@ const { Server } = require('socket.io')
 const PORT = Number(process.env.PORT || 3001)
 const app = express()
 const httpServer = http.createServer(app)
+const corsOrigins = String(process.env.CORS_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean)
 const io = new Server(httpServer, {
-  cors: { origin: true, credentials: true },
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin || !corsOrigins.length || corsOrigins.includes(origin)) return callback(null, true)
+      return callback(new Error('Origin is not allowed by CORS'))
+    },
+    credentials: true,
+  },
   transports: ['websocket', 'polling'],
 })
 
@@ -23,20 +30,20 @@ app.get('/api/rooms/:roomCode', (req, res) => {
 })
 
 function getRoom(roomCode) {
-  const normalized = roomCode.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20) || 'OPEN'
+  const normalized = String(roomCode || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20) || 'OPEN'
   if (!rooms.has(normalized)) rooms.set(normalized, { participants: new Map(), captions: [] })
   return { code: normalized, room: rooms.get(normalized) }
 }
 
 function broadcastParticipants(roomCode) {
   const room = rooms.get(roomCode)
-  if (!room) return
-  io.to(roomCode).emit('participants:update', [...room.participants.values()])
+  if (room) io.to(roomCode).emit('participants:update', [...room.participants.values()])
 }
 
 io.on('connection', (socket) => {
   socket.on('join-room', ({ roomCode, name }) => {
     const next = getRoom(roomCode)
+    const existingPeers = [...next.room.participants.values()]
     if (socket.data.roomCode) {
       socket.leave(socket.data.roomCode)
       const previous = rooms.get(socket.data.roomCode)
@@ -54,40 +61,45 @@ io.on('connection', (socket) => {
       state: 'listening',
     }
     socket.data.roomCode = next.code
-    socket.data.participantId = socket.id
     socket.join(next.code)
     next.room.participants.set(socket.id, participant)
     socket.emit('room:state', { roomCode: next.code, participants: [...next.room.participants.values()], captions: next.room.captions.slice(-50) })
+    socket.emit('webrtc:peers', existingPeers)
     socket.to(next.code).emit('participant:joined', participant)
     broadcastParticipants(next.code)
+  })
+
+  socket.on('webrtc:signal', ({ to, signal }) => {
+    if (!socket.data.roomCode || typeof to !== 'string' || !signal?.type) return
+    const target = io.sockets.sockets.get(to)
+    if (!target || target.data.roomCode !== socket.data.roomCode) return
+    target.emit('webrtc:signal', { from: socket.id, signal })
   })
 
   socket.on('caption:send', (caption) => {
     const roomCode = socket.data.roomCode
     const room = rooms.get(roomCode)
     if (!room || !caption || typeof caption.text !== 'string') return
-    const safeCaption = { ...caption, id: caption.id || `${socket.id}-${Date.now()}`, timestamp: caption.timestamp || Date.now(), status: caption.status || 'confirmed' }
+    const safeCaption = { ...caption, speakerId: socket.id, id: caption.id || `${socket.id}-${Date.now()}`, timestamp: caption.timestamp || Date.now(), status: caption.status || 'confirmed' }
     room.captions.push(safeCaption)
     room.captions = room.captions.slice(-100)
     io.to(roomCode).emit('caption:new', safeCaption)
   })
 
   socket.on('participant:mute', ({ muted }) => {
-    const roomCode = socket.data.roomCode
-    const room = rooms.get(roomCode)
+    const room = rooms.get(socket.data.roomCode)
     const participant = room?.participants.get(socket.id)
     if (!participant) return
     participant.mic = muted ? 'muted' : 'on'
-    broadcastParticipants(roomCode)
+    broadcastParticipants(socket.data.roomCode)
   })
 
   socket.on('participant:speaking', ({ speaking }) => {
-    const roomCode = socket.data.roomCode
-    const room = rooms.get(roomCode)
+    const room = rooms.get(socket.data.roomCode)
     const participant = room?.participants.get(socket.id)
     if (!participant) return
     participant.state = speaking ? 'speaking' : 'listening'
-    broadcastParticipants(roomCode)
+    broadcastParticipants(socket.data.roomCode)
   })
 
   socket.on('disconnect', () => {
@@ -95,6 +107,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomCode)
     if (!room) return
     room.participants.delete(socket.id)
+    io.to(roomCode).emit('webrtc:peer-left', { peerId: socket.id })
     broadcastParticipants(roomCode)
     if (!room.participants.size && !room.captions.length) rooms.delete(roomCode)
   })

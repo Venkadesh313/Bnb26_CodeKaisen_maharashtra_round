@@ -12,6 +12,7 @@ import { DEMO_SCRIPT, exportTranscript, INITIAL_CAPTIONS } from './lib/captions'
 import { PARTICIPANTS, ROOM } from './lib/room'
 import type { AudioState, Caption, Participant } from './lib/types'
 import type { RoomSocket } from './lib/socket'
+import { WebRtcMesh } from './lib/webrtc'
 
 function App() {
   const [captions, setCaptions] = useState<Caption[]>(INITIAL_CAPTIONS)
@@ -21,16 +22,22 @@ function App() {
   const [copied, setCopied] = useState(false)
   const [toast, setToast] = useState('')
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'fallback'>('connecting')
+  const [rtcStatus, setRtcStatus] = useState<'idle' | 'ready' | 'connecting' | 'connected' | 'error'>('idle')
   const [roomCode, setRoomCode] = useState(ROOM.code)
   const [displayName, setDisplayName] = useState('Maya Chen')
   const [audio, setAudio] = useState<AudioState>({ micReady: false, micMuted: false, connection: 'connected', latency: 180, packetLoss: 0.4, source: 'demo' })
   const socketRef = useRef<RoomSocket | null>(null)
+  const meshRef = useRef<WebRtcMesh | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
 
   const sessionDuration = useMemo(() => `${String(Math.floor(captions.length * 1.7)).padStart(2, '0')}:42`, [captions.length])
 
   useEffect(() => {
     const socket = io('/', { autoConnect: false, transports: ['websocket', 'polling'] }) as RoomSocket
     socketRef.current = socket
+    const mesh = new WebRtcMesh(socket, { onStatus: setRtcStatus })
+    meshRef.current = mesh
+
     socket.on('connect', () => {
       setBackendStatus('connected')
       setAudio((current) => ({ ...current, connection: 'connected' }))
@@ -42,17 +49,24 @@ function App() {
     })
     socket.on('room:state', (state) => {
       setRoomCode(state.roomCode)
-      if (state.participants.length > 1) setParticipants(state.participants)
+      if (state.participants.length) setParticipants(state.participants)
       if (state.captions.length) setCaptions(state.captions)
     })
     socket.on('participants:update', (nextParticipants) => {
-      if (nextParticipants.length > 1) setParticipants(nextParticipants)
+      if (nextParticipants.length) setParticipants(nextParticipants)
     })
     socket.on('caption:new', (caption) => {
       setCaptions((current) => current.some((item) => item.id === caption.id) ? current : [...current.slice(-7), caption])
     })
     socket.connect()
-    return () => { socket.removeAllListeners(); socket.disconnect(); socketRef.current = null }
+
+    return () => {
+      mesh.close()
+      socket.removeAllListeners()
+      socket.disconnect()
+      socketRef.current = null
+      meshRef.current = null
+    }
   }, [])
 
   useEffect(() => {
@@ -84,31 +98,42 @@ function App() {
   const flashToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600) }
   const copyRoom = async () => {
     try { await navigator.clipboard.writeText(roomCode) } catch { /* Clipboard is optional in demo preview. */ }
-    setCopied(true); flashToast(`Room code ${roomCode} copied`); window.setTimeout(() => setCopied(false), 2200)
+    setCopied(true)
+    flashToast(`Room code ${roomCode} copied`)
+    window.setTimeout(() => setCopied(false), 2200)
   }
   const joinRoom = () => {
     const nextName = window.prompt('Your display name', displayName)?.trim()
     if (!nextName) return
     const nextCode = window.prompt('Workspace code', roomCode)?.trim().toUpperCase()
     if (!nextCode) return
-    setDisplayName(nextName); setRoomCode(nextCode)
+    setDisplayName(nextName)
+    setRoomCode(nextCode)
     socketRef.current?.emit('join-room', { roomCode: nextCode, name: nextName })
     flashToast(`Joined shared room ${nextCode}`)
   }
   const checkMic = async () => {
     const result = await requestMicrophone()
+    if (result.stream) {
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      streamRef.current = result.stream
+      result.stream.getAudioTracks().forEach((track) => { track.enabled = !audio.micMuted })
+      meshRef.current?.setLocalStream(result.stream)
+    }
     setAudio((current) => ({ ...current, micReady: result.micReady, source: result.micReady ? 'microphone' : 'demo' }))
-    flashToast(result.micReady ? 'Microphone is ready for live audio' : 'Demo audio kept the room running')
+    flashToast(result.micReady ? 'Microphone is live on the WebRTC path' : 'Demo audio kept the room running')
   }
   const toggleMute = () => {
     setAudio((current) => {
       const nextMuted = !current.micMuted
+      streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !nextMuted })
       socketRef.current?.emit('participant:mute', { muted: nextMuted })
       return { ...current, micMuted: nextMuted }
     })
   }
   const exportFile = (format: 'txt' | 'vtt') => { exportTranscript(captions, format); flashToast(`Transcript exported as .${format}`) }
   const liveConnectionLabel = backendStatus === 'connected' ? 'Socket room connected' : backendStatus === 'connecting' ? 'Connecting shared room…' : 'Demo fallback active'
+  const rtcLabel = rtcStatus === 'connected' ? 'WebRTC audio connected' : rtcStatus === 'connecting' ? 'WebRTC negotiating…' : rtcStatus === 'ready' ? 'WebRTC microphone ready' : rtcStatus === 'error' ? 'WebRTC needs retry' : 'WebRTC mic not started'
 
   return (
     <div className="app-shell">
@@ -119,7 +144,7 @@ function App() {
           <button className="rail-nav__item" type="button"><Layers3 size={16} /><span>Past sessions</span></button>
           <button className="rail-nav__item" type="button"><UsersRound size={16} /><span>People</span></button>
         </nav>
-        <div className="rail-foot"><strong>Every voice, included.</strong><span>Local prototype · v0.2</span></div>
+        <div className="rail-foot"><strong>Every voice, included.</strong><span>Local prototype · v0.3</span></div>
         <div className="rail-bottom"><button className="rail-nav__item" type="button"><Settings2 size={16} /><span>Settings</span></button><div className="rail-profile"><div className="avatar avatar--lime avatar--small">MC</div><div><strong>{displayName}</strong><span>Live participant</span></div><ChevronDown size={14} /></div></div>
       </aside>
 
@@ -146,8 +171,8 @@ function App() {
             <div className="session-footnote"><span className="footnote-icon"><Clipboard size={14} /></span><span><strong>Session continuity on</strong><br />History remains available if someone reconnects.</span><button type="button" aria-label="More about session continuity"><ArrowUpRight size={14} /></button></div>
           </aside>
         </div>
-        <div className="status-line" role="status" aria-live="polite"><Sparkles size={13} /> {backendStatus === 'connected' ? 'Genuine shared room active. Open this URL in another tab to join.' : backendStatus === 'fallback' ? 'Backend not available — demo mode keeps captions usable.' : 'Connecting to the shared room backend…'}</div>
-        <footer className="page-footer"><span><Command size={13} /> Roundtable / build 0.9.0-demo</span><span><span className="footer-dot" /> {sessionDuration} session time</span><span><ShieldCheck size={13} /> {backendStatus === 'connected' ? 'Socket.io ready' : 'Speech API ready'}</span><span className="footer-spacer" /><span>Designed for 2–5 people</span></footer>
+        <div className="status-line" role="status" aria-live="polite"><Sparkles size={13} /> {backendStatus === 'connected' ? `Genuine shared room active. ${rtcLabel}.` : backendStatus === 'fallback' ? 'Backend not available — demo mode keeps captions usable.' : 'Connecting to the shared room backend…'}</div>
+        <footer className="page-footer"><span><Command size={13} /> Roundtable / build 1.0.0-demo</span><span><span className="footer-dot" /> {sessionDuration} session time</span><span><ShieldCheck size={13} /> {backendStatus === 'connected' ? 'Socket.io ready' : 'Speech API ready'}</span><span className="footer-spacer" /><span>Designed for 2–5 people</span></footer>
       </main>
       {toast && <div className="toast" role="status"><Check size={15} /> {toast}</div>}
     </div>
