@@ -1,23 +1,30 @@
 {
   "name": "roundtable-live-captions",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "server": "node server/index.cjs",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "start": "node server/index.cjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
+    "express": "latest",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "socket.io": "latest",
+    "socket.io-client": "latest",
     "typescript": "latest",
     "vite": "latest"
   },
   "devDependencies": {
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0"
+    "@types/express": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
   }
 }

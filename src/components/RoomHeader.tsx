@@ -7,39 +7,42 @@ type RoomHeaderProps = {
   captionCount: number
   copied: boolean
   onCopyRoom: () => void
+  onJoinRoom: () => void
   children?: ReactNode
 }
 
-export function RoomHeader({ isRunning, captionCount, copied, onCopyRoom, children }: RoomHeaderProps) {
+export function RoomHeader({ isRunning, captionCount, copied, onCopyRoom, onJoinRoom, children }: RoomHeaderProps) {
   return (
     <header className="room-header">
-      <div className="room-header__intro">
-        <div className="eyebrow-row">
-          <span className={`live-chip ${isRunning ? 'live-chip--active' : 'live-chip--paused'}`}>
-            <span className="live-chip__dot" />
-            {isRunning ? 'Live session' : 'Session paused'}
-          </span>
-          <span className="eyebrow-muted"><LockKeyhole size={12} /> Private room</span>
-        </div>
-        <div className="room-header__title-row">
-          <div>
-            <p className="section-kicker">Roundtable / shared conversation</p>
-            <h1>{ROOM.name}</h1>
+      <div className="room-header__topbar">
+        <span className="room-header__eyebrow">A little closer. A lot clearer.</span>
+        <span className="prototype-pill">Frontend prototype</span>
+      </div>
+      <div className="room-header__hero">
+        <div className="room-header__intro">
+          <div className="eyebrow-row">
+            <span className="section-kicker">{ROOM.code ? `WORKSPACE / ${ROOM.code}` : 'WELCOME TO ROUNDTABLE'}</span>
+            <span className="eyebrow-muted"><LockKeyhole size={12} /> Private local room</span>
           </div>
-          <div className="room-header__actions">{children}</div>
+          <h1>Good conversations include everyone.</h1>
+          <p className="room-header__subcopy">A shared space for words, ideas, and every voice in the room.</p>
+          <div className="room-meta">
+            <span className="room-meta__room"><Radio size={13} /> {ROOM.name}</span>
+            <span>{captionCount} captions</span>
+            <span className="room-meta__divider" />
+            <span>{isRunning ? 'Ready to listen' : 'Session paused'}</span>
+          </div>
         </div>
-        <div className="room-meta">
-          <span className="room-meta__code">{ROOM.code}</span>
-          <span>Started {ROOM.startedAt}</span>
-          <span className="room-meta__divider" />
-          <span><Radio size={13} /> {captionCount} captions in this session</span>
+        <div className="room-header__actions">
+          <button className="outline-button" type="button" onClick={onCopyRoom}>
+            {copied ? <Check size={15} /> : <Share2 size={15} />}
+            {copied ? 'Code copied' : 'Share code'}
+            {!copied && <Copy size={13} className="share-button__copy" />}
+          </button>
+          <button className="primary-button header-primary" type="button" onClick={onJoinRoom}>Open workspace</button>
+          {children}
         </div>
       </div>
-      <button className="share-button" type="button" onClick={onCopyRoom}>
-        {copied ? <Check size={16} /> : <Share2 size={16} />}
-        <span>{copied ? 'Room code copied' : 'Invite someone'}</span>
-        {!copied && <Copy size={13} className="share-button__copy" />}
-      </button>
     </header>
   )
 }
