@@ -9,6 +9,7 @@ export type WebRtcPeer = { id: string }
 type WebRtcCallbacks = {
   onStatus: (status: 'idle' | 'ready' | 'connecting' | 'connected' | 'error') => void
   onRemoteStream?: (peerId: string, stream: MediaStream) => void
+  onPeerLeft?: (peerId: string) => void
 }
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -64,7 +65,7 @@ export class WebRtcMesh {
     peer.onicecandidate = (event) => {
       if (event.candidate) this.socket.emit('webrtc:signal', { to: peerId, signal: { type: 'candidate', candidate: event.candidate.toJSON() } })
     }
-      peer.ontrack = (event) => {
+    peer.ontrack = (event) => {
       const [stream] = event.streams
       if (!stream) return
       this.callbacks.onRemoteStream?.(peerId, stream)
@@ -131,6 +132,7 @@ export class WebRtcMesh {
     this.peers.delete(peerId)
     this.remoteAudios.get(peerId)?.remove()
     this.remoteAudios.delete(peerId)
+    this.callbacks.onPeerLeft?.(peerId)
     if (!this.peers.size) this.callbacks.onStatus(this.localStream ? 'ready' : 'idle')
   }
 }

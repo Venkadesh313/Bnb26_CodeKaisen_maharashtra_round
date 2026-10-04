@@ -15,7 +15,10 @@ export const PARTICIPANTS: Participant[] = [
     initials: 'MC',
     accent: 'lime',
     mic: 'on',
+    video: 'off',
+    handRaised: false,
     state: 'speaking',
+    isHost: true,
   },
   {
     id: 'jon',
@@ -24,6 +27,8 @@ export const PARTICIPANTS: Participant[] = [
     initials: 'JB',
     accent: 'coral',
     mic: 'on',
+    video: 'off',
+    handRaised: false,
     state: 'listening',
   },
   {
@@ -33,6 +38,8 @@ export const PARTICIPANTS: Participant[] = [
     initials: 'RP',
     accent: 'blue',
     mic: 'on',
+    video: 'off',
+    handRaised: false,
     state: 'listening',
   },
 ]

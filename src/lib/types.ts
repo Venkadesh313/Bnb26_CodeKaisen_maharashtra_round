@@ -7,7 +7,10 @@ export type Participant = {
   initials: string
   accent: 'lime' | 'coral' | 'blue' | 'lavender'
   mic: 'on' | 'muted'
+  video: 'on' | 'off'
+  handRaised: boolean
   state: 'speaking' | 'listening' | 'joining'
+  isHost?: boolean
 }
 
 export type Caption = {
@@ -30,7 +33,6 @@ export type AudioState = {
   source: 'demo' | 'microphone'
 }
 
-// SpeechRecognition Types
 export interface SpeechRecognitionAlternative {
   readonly transcript: string
   readonly confidence: number
