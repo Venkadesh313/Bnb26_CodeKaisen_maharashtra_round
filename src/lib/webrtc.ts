@@ -64,7 +64,7 @@ export class WebRtcMesh {
     peer.onicecandidate = (event) => {
       if (event.candidate) this.socket.emit('webrtc:signal', { to: peerId, signal: { type: 'candidate', candidate: event.candidate.toJSON() } })
     }
-    peer.ontrack = (event) => {
+      peer.ontrack = (event) => {
       const [stream] = event.streams
       if (!stream) return
       this.callbacks.onRemoteStream?.(peerId, stream)
@@ -78,6 +78,12 @@ export class WebRtcMesh {
         this.remoteAudios.set(peerId, audio)
       }
       audio.srcObject = stream
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn(`[WebRTC] Autoplay restricted for peer ${peerId}:`, err?.message || err)
+        })
+      }
     }
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') this.callbacks.onStatus('connected')

@@ -13,6 +13,7 @@ import { PARTICIPANTS, ROOM } from './lib/room'
 import type { AudioState, Caption, Participant } from './lib/types'
 import type { RoomSocket } from './lib/socket'
 import { WebRtcMesh } from './lib/webrtc'
+import { useSpeechRecognition } from './hooks/useSpeechRecognition'
 
 function App() {
   const [captions, setCaptions] = useState<Caption[]>(INITIAL_CAPTIONS)
@@ -69,8 +70,16 @@ function App() {
     }
   }, [])
 
+  const isMicRecording = audio.micReady && !audio.micMuted && isRunning
+  useSpeechRecognition({
+    socket: socketRef.current,
+    isRecording: isMicRecording,
+    speakerName: displayName,
+    onError: (err) => flashToast(err),
+  })
+
   useEffect(() => {
-    if (!isRunning) return
+    if (!isRunning || audio.source === 'microphone') return
     const interval = window.setInterval(() => {
       const next = DEMO_SCRIPT[captions.length % DEMO_SCRIPT.length]
       const captionId = `live-${Date.now()}`
@@ -82,7 +91,7 @@ function App() {
       window.setTimeout(() => setCaptions((current) => current.map((caption) => caption.id === captionId ? { ...caption, status: 'confirmed', isCorrection: true } : caption)), 1400)
     }, 5600)
     return () => window.clearInterval(interval)
-  }, [isRunning, captions.length])
+  }, [isRunning, audio.source, captions.length])
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
